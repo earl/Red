@@ -64,8 +64,10 @@ context [
 
 		stn-undef		0			;; end of a hash chain (undef symtab nr)
 
+		stb-local		0			;; local symbol
 		stb-global		1			;; global symbol
 
+		stt-notype		0			;; dummy symbol type
 		stt-func		2			;; symbol is a code object
 
 		stv-default		0			;; default symbol visibility
@@ -202,6 +204,9 @@ context [
 			]
 		]
 
+		section ".symtab"			[symtab		[]					word]
+		section ".strtab"			[strtab		[]					byte]
+
 		section ".stab"				[progbits	[]					word]
 		section ".stabstr"			[strtab		[]					byte]
 
@@ -266,6 +271,7 @@ context [
 			".dynsym"		meta [link ".dynstr" info ".interp"]
 			".rel.text"		meta [link ".dynsym" info ".text"]
 			".dynamic"		meta [link ".dynstr"]
+			".symtab"		meta [link ".strtab"]
 			".stab"			meta [link ".stabstr"]
 
 			"ehdr"			size elf-header
@@ -276,12 +282,14 @@ context [
 			".data"			size (data-size)
 			".data.rel.ro"	size [machine-word		length? symbols]
 			".dynamic"		size [elf-dynamic		9 + length? libraries]
+			".symtab"		size [elf-symbol		1 + ((length? natives) / 2)]
 			".stab"			size [stab-entry		2 + ((length? natives) / 2)]
 			"shdr"			size [section-header	length? sections]
 
 			".interp"		data (to-c-string dynamic-linker)
 			".dynstr"		data (to-elf-strtab join libraries symbols)
 			".text"			data (job/sections/code/2)
+			".strtab"		data (to-elf-strtab extract natives 2)
 			".stabstr"		data (to-elf-strtab join ["%_"] extract natives 2)
 			".shstrtab"		data (to-elf-strtab sections)
 		]
@@ -351,6 +359,14 @@ context [
 				get-address ".rel.text" get-size ".rel.text"
 				get-data ".dynstr"
 				libraries
+		]
+
+		set-data ".symtab" [
+			build-symtab
+				get-address ".text"
+				section-index-of sections ".text"
+				natives
+				get-data ".strtab"
 		]
 
 		set-data ".stab" [
@@ -562,6 +578,30 @@ context [
 		map-each [tag value] entries [
 			make-struct elf-dynamic reduce [lookup-def "dt-" tag value]
 		]
+	]
+
+	build-symtab: func [
+		text-address [integer!]
+		text-index [integer!]
+		natives [block!]
+		strtab [binary!]
+		/local result entry
+	] [
+		result: copy []
+
+		;; Symbol #0: undefined symbol
+		append result make-struct elf-symbol none
+
+		foreach [name offset] natives [
+			entry: make-struct elf-symbol none
+			entry/name: strtab-index-of strtab name
+			entry/value: text-address + offset
+			entry/info: to-elf-symbol-info defs/stb-local defs/stt-notype
+			entry/shndx: text-index
+			append result entry
+		]
+
+		result
 	]
 
 	build-stab: func [
