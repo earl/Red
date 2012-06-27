@@ -249,7 +249,9 @@ context [
 		]
 
 		unless job/debug? [
-			remove-elements structure [".stab" ".stabstr"]
+			;; Don't emit internal symbol table and stabs debug info if
+			;; building non-debug binaries.
+			remove-elements structure [".symtab" ".strtab" ".stab" ".stabstr"]
 		]
 
 		data-size: size-of job/sections/data/2
